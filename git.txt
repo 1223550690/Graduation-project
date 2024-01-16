@@ -1,7 +1,7 @@
 下行同步：执行git pull
 上行同步：
 1. git add .（指定文件可以用文件路径取代.）
-2. git commit -m "<提交备注>"
+2. git commit -m "<提交备注>"  【--allow-empty-message】
 3. git push origin master
 
 git init：在当前目录中初始化一个新的 Git 仓库。
