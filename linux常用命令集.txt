@@ -1,0 +1,16 @@
+进入root：su root
+回到上一步命令：ctrl+p
+跳转目录：cd /add
+查找目标文件：whereis <folder>
+创建新文件夹：mkdir <new_folder>
+列出当前目录文件：ls <-a>(含隐藏文件)
+列出当前目录下所有文件夹：ls -d */
+创建新文件并打开：gedit <new_file>
+转移文件：mv <old> <new> <-i>(重名冲突提醒)
+复制文件：cp <file> <path>
+检查系统变量：echo $PYTHONPATH
+默认方式打开文件：xdg-open <file>
+检查文件内容（可读）: cat <file>
+pip install --index-url=https://pypi.tuna.tsinghua.edu.cn/simple numpy
+重置网络：systemctl restart network-manager
+降权限：chmod 755 .
