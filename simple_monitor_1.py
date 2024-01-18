@@ -1,3 +1,8 @@
+
+
+
+
+
 from operator import attrgetter
 
 from ryu.app import simple_switch_13
@@ -23,6 +28,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         self.list = []
  
         self.csv_file = 'data.csv'
+        print("hello world")
         if os.path.isfile(self.csv_file):
         	open(self.csv_file, 'w').close()
             	self.df = pd.DataFrame(columns=['Index', 'datapath','port',
@@ -49,7 +55,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
         while True:
             for dp in self.datapaths.values():
                 self._request_stats(dp)
-            hub.sleep(10)
+            hub.sleep(1)
 
     def _request_stats(self, datapath):
         self.logger.debug('send stats request: %016x', datapath.id)
@@ -65,7 +71,7 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
     @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
     def _flow_stats_reply_handler(self, ev):
         body = ev.msg.body
-
+	print("hello world")
         self.logger.info('datapath         '
                          'in-port  eth-dst           '
                          'out-port packets  bytes')
@@ -129,7 +135,22 @@ class SimpleMonitor13(simple_switch_13.SimpleSwitch13):
             		mode='lines',
             		name='rx-bytes'
             		)
+            	
+            	bytes_diff = self.df['rx-bytes'].diff()
+            	time_diff = 1
+            	rate = bytes_diff/1
+
+            	flow = go.Scatter(
+            		x=self.df['time'][1:],
+            		y=rate*8,
+            		mode='lines',
+            		name='flow'
+            		)
+            	
             	fig1 = go.Figure(data=[table])
             	fig2 = go.Figure(data=[line_chart])
+            	fig3 = go.Figure(data=[flow])
+            	
             	pyo.plot(fig1, filename='table.html', auto_open=False)
             	pyo.plot(fig2, filename='line_chart.html', auto_open=False)
+            	pyo.plot(fig3, filename='flow.html', auto_open=False)
