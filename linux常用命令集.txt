@@ -15,3 +15,6 @@ pip install --index-url=https://pypi.tuna.tsinghua.edu.cn/simple numpy
 重置网络：systemctl restart network-manager
 降权限：chmod 755 .
 更改所有者：chown user.name folder/ -R  <对文件内全体生效>
+安装.deb: dpkg -i (apt --fix-broken install ./package.deb)
+删除文件：rm -f
+删除文件夹：rm -r
