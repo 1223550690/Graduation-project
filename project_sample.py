@@ -18,11 +18,50 @@ app.layout = html.Div([
         interval=1*1000, 
         n_intervals=0
     ),
+    dcc.Dropdown(id='switches-dropdown'),  #组件：下拉菜单
     html.Div(id='switches-info'),  #组件：交换机信息
     html.Div(id='flows-info'),     #组件：流量信息
     dcc.Graph(id='rx-packets-time-series')  #组件：流量图(接收流量)
 ])
 
+#函数：更新交换机下拉列表
+@app.callback(Output('switches-dropdown', 'options'),      #输出：下拉菜单的options
+              [Input('update-interval', 'n_intervals')])   #输入：计时器组件的n_intervals
+def update_switches_list(n_intervals):
+    url = 'http://localhost:8080/stats/switches'  # Ryu 控制器获取交换机列表的API
+    try:
+        response = requests.get(url)
+        switches_list = response.json()
+        # 创建一个用于Dropdown的选项列表，每个选项是一个字典
+        options = [{'label': f"交换机 {s}", 'value': s} for s in switches_list]
+    except requests.exceptions.RequestException:
+        options = []
+    return options
+
+
+#函数：更新特定交换机信息
+@app.callback(Output('switch-info', 'children'),
+              [Input('switches-dropdown', 'value')])
+def update_switch_info(selected_switch):
+    if selected_switch is None:
+        return html.Div()
+
+    # 根据选择的交换机获取特定的交换机信息
+    url = f'http://localhost:8080/stats/flow/{selected_switch}'
+    try:
+        response = requests.post(url, data={})
+        flow_info = response.json()
+        # 假设数据格式是一个字典，键为交换机，值为流表信息
+        flows = pd.DataFrame(flow_info[str(selected_switch)])
+        # 将数据转换为HTML表格
+        children = html.Div([
+            html.H2(f"交换机 {selected_switch} 流表"),
+            dcc.Markdown(flows.to_markdown(index=False))
+        ])
+    except requests.exceptions.RequestException:
+        children = html.Div(f"获取交换机 {selected_switch} 的数据失败。")
+
+    return children
 
 #函数：数据包信息更新
 @app.callback(Output('rx-packets-time-series', 'figure'),   #输出：流量图组件的figure
