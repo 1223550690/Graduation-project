@@ -1,1 +1,2 @@
 /home/onism/Desktop/shared_folders/Graduation-project
+/home/onism/Desktop/ryu/ryu

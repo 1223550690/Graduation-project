@@ -1,11 +1,13 @@
 import dash
 from dash import Dash, html, dcc
+from dash import dash_table
 import requests
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output,State
 import pandas as pd
 import plotly.graph_objs as go
 from dash.exceptions import PreventUpdate
-
+import json
+from pathlib import Path
 
 app = Dash(__name__)
 
@@ -19,14 +21,70 @@ app.layout = html.Div([
         n_intervals=0
     ),
     dcc.Dropdown(id='switches-dropdown'),  #组件：下拉菜单
+    
+    html.Div([
+        dash_table.DataTable(
+            id='flow-table',
+            columns = [
+    		{'name': 'actions', 'id': 'actions'}, 
+
+    		{'name': 'match.in_port', 'id': 'match.in_port'},  
+    
+    		{'name': 'packet_count', 'id': 'packet_count'},
+	    	{'name': 'byte_count', 'id': 'byte_count'},
+	    	{'name': 'idle_timeout', 'id': 'idle_timeout'},
+	    	{'name': 'hard_timeout', 'id': 'hard_timeout'},
+	    	{'name': 'duration_sec', 'id': 'duration_sec'},
+	    	{'name': 'duration_nsec', 'id': 'duration_nsec'},
+	    	{'name': 'priority', 'id': 'priority'},
+	    	{'name': 'table_id', 'id': 'table_id'},
+	    	{'name': 'flags', 'id': 'flags'}
+            ],
+            
+            data=[],  # 初始数据为空
+            row_selectable='single',  # 允许单行选择
+            style_table={'height': '200px', 'overflowY': 'auto', 'display': 'none'}
+        )
+    ]),
+    
+        html.Div([
+        dash_table.DataTable(
+            id='port-table',
+            columns = [
+    		{'name': 'hw_addr', 'id': 'hw_addr'}, 
+
+    		{'name': 'curr', 'id': 'curr'},  
+    
+    		{'name': 'supported', 'id': 'supported'},
+	    	{'name': 'max_speed', 'id': 'max_speed'},
+	    	{'name': 'advertised', 'id': 'advertised'},
+	    	{'name': 'peer', 'id': 'peer'},
+	    	{'name': 'port_no', 'id': 'port_no'},
+	    	{'name': 'curr_speed', 'id': 'curr_speed'},
+	    	{'name': 'name', 'id': 'name'},
+	    	{'name': 'state', 'id': 'state'},
+	    	{'name': 'config', 'id': 'config'}
+            ],
+            
+            data=[],  # 初始数据为空
+            style_table={'height': '200px', 'overflowY': 'auto', 'display': 'none'}
+        )
+    ]),
+
+    # 当选中某行时用于显示信息的 Div
+    html.Div(id='flow-details'),
+    
+    
     html.Div(id='switches-info'),  #组件：交换机信息
     html.Div(id='flows-info'),     #组件：流量信息
     dcc.Graph(id='rx-packets-time-series')  #组件：流量图(接收流量)
+
 ])
+
 
 #函数：更新交换机下拉列表
 @app.callback(Output('switches-dropdown', 'options'),      #输出：下拉菜单的options
-              [Input('update-interval', 'n_intervals')])   #输入：计时器组件的n_intervals
+              [Input('interval-component', 'n_intervals')])   #输入：计时器组件的n_intervals
 def update_switches_list(n_intervals):
     url = 'http://localhost:8080/stats/switches'  # Ryu 控制器获取交换机列表的API
     try:
@@ -37,10 +95,96 @@ def update_switches_list(n_intervals):
     except requests.exceptions.RequestException:
         options = []
     return options
+    
+    
+@app.callback([Output('flow-table', 'data'),
+              Output('flow-table', 'style_table')],
+              [Input('switches-dropdown', 'value')])
+def update_table(selected_switch):
+    if selected_switch is None:
+        return ([],{'display': 'none'})
+
+    url = f'http://localhost:8080/stats/flow/{selected_switch}'
+    try:
+        response = requests.get(url)  # 可能需要使用GET请求获取数据
+        flow_info = response.json()
+        
+        for entry in flow_info[str(selected_switch)]:
+            entry['actions'] = ', '.join(entry['actions'])
+        for entry in flow_info.get(str(selected_switch), []):
+            entry['match'] = str(entry['match'])
+	    
+        flows = flow_info[str(selected_switch)]
+        
+        return [flows, {'display': 'block'}]
+        
+    except requests.exceptions.RequestException as e:
+        print(e)
+        return ([],{'display': 'none'})  # 请求失败时返回空数据
 
 
+
+@app.callback([Output('port-table', 'data'),
+              Output('port-table', 'style_table')],
+              [Input('switches-dropdown', 'value')])
+def update_table(selected_switch):
+    if selected_switch is None:
+        return ([],{'display': 'none'})
+
+    url = f'http://localhost:8080/stats/portdesc/{selected_switch}'
+    try:
+        response = requests.get(url)  # 可能需要使用GET请求获取数据
+        port_info = response.json()
+        
+        for entry in port_info[str(selected_switch)]:
+            entry['hw_addr'] = str(entry['hw_addr'])
+            entry['name'] = str(entry['name'])
+            
+        ports = port_info[str(selected_switch)]
+        return [ports, {'display': 'block'}]
+        
+    except requests.exceptions.RequestException as e:
+        print(e)
+        return ([],{'display': 'none'})  # 请求失败时返回空数据
+
+
+
+
+
+
+
+@app.callback(
+    Output('flow-details', 'children'),
+    [Input('flow-table', 'selected_rows')],
+    [State('flow-table', 'data')])
+def display_flow_details(selected_rows, rows):
+    if selected_rows is None or len(selected_rows) == 0:
+        # 未选择任何行时不展示任何内容或展示提示信息
+        return "请选择一个流表项以查看详情。"
+    else:
+        # 取得选中的第一行
+        selected_row = rows[selected_rows[0]]
+        # 解析流表信息，并返回格式化的中文解释
+        details = parse_flow_table_row(selected_row)
+        preformatted_text = html.Pre(details, style={'white-space': 'pre-wrap'})
+        return preformatted_text
+
+def parse_flow_table_row(row):
+    chinese_explanation = f"""
+    - 动作: {row['actions']}\n
+    - 闲置超时: {row['idle_timeout']} 秒\n
+    - 硬超时: {row['hard_timeout']} 秒\n
+    - 数据包计数: {row['packet_count']}\n
+    - 字节计数: {row['byte_count']}\n
+    - 持续时间: {row['duration_sec']} 秒 {row['duration_nsec']} 纳秒\n
+    - 优先级: {row['priority']}\n
+    - 匹配条件: {json.dumps(row['match'], ensure_ascii=False)}\n
+    """
+    return chinese_explanation
+
+'''
 #函数：更新特定交换机信息
-@app.callback(Output('switch-info', 'children'),
+@app.callback(Output('switches-info', 'children'),
               [Input('switches-dropdown', 'value')])
 def update_switch_info(selected_switch):
     if selected_switch is None:
@@ -63,16 +207,39 @@ def update_switch_info(selected_switch):
 
     return children
 
+'''
 #函数：数据包信息更新
 @app.callback(Output('rx-packets-time-series', 'figure'),   #输出：流量图组件的figure
               [Input('interval-component', 'n_intervals')]) #输入：计时器组件的n_intervals
 
 def update_rx_packets_time_series(n):
-    df = pd.read_csv('data.csv')
+    csv_file_path = 'data.csv'
+    
+
+    if not Path(csv_file_path).is_file() or Path(csv_file_path).stat().st_size == 0:
+
+        return {
+            'data': [],
+            'layout': go.Layout(
+                title='无法打开 data.csv 文件或文件无内容'
+            )
+        }
+    
+
+    df = pd.read_csv(csv_file_path)
+  
+    if df.empty:
+        return {
+            'data': [],
+            'layout': go.Layout(
+                title='无法打开 data.csv 文件或文件无内容'
+            )
+        }
+    
     
     df['time'] = pd.to_datetime(df['time']).dt.strftime('%H:%M:%S')
 
-    df['rx_rate'] = df['rx-bytes'].diff()
+    df.loc[df['datapath'] == 1, 'rx_rate'] = df.loc[df['datapath'] == 1, 'rx-bytes'].diff()
 
     trace = go.Scatter(
         x=df['time'],
@@ -82,14 +249,14 @@ def update_rx_packets_time_series(n):
     )
 
     layout = go.Layout(
-        title='接收包速率随时间变化',
+        title='datapath1 接收包速率随时间变化',
         xaxis=dict(title='时间'),
         yaxis=dict(title='速率 (bytes/s)')
     )
     
     return {'data': [trace], 'layout': layout}
 
-
+'''
 #函数：交换机状态更新
 @app.callback(Output('switches-info', 'children'),          #输出：交换机信息组件的children
               [Input('interval-component', 'n_intervals')]) #输入：计时器组件的n_intervals
@@ -111,7 +278,7 @@ def update_switches_info(n):
         html.H3('交换机列表'),
         dcc.Markdown(switches_pd.to_markdown(index=False)) 
     ])
-    
+'''
 
 #函数：流量状态更新
 @app.callback(Output('flows-info', 'children'),              #输出：流量信息组件的children
