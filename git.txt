@@ -11,7 +11,11 @@ git clone <repository>：克隆（下载）一个远程仓库到本地。
 
 git add <file>：将指定文件添加到 Git 暂存区。
 
-git add .：将所有修改过的文件添加到 Git 暂存区。
+git add .：将所有修改过的文件添加到 Git 暂存区
+
+git stash： 储存当前修改
+
+git stash pop：恢复之前修改
 
 git commit -m <message>：将暂存区中的文件提交到本地仓库，并添加提交信息。
 
