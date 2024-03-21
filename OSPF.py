@@ -3,10 +3,14 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
+from ryu.topology import event, switches
 from ryu.topology.api import get_switch, get_link
-from ryu.topology import event
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
+
+import matplotlib.pyplot as plt
+import threading
+import json
  
 import networkx as nx
  
@@ -17,10 +21,13 @@ class PathForward(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(PathForward, self).__init__(*args, **kwargs)
         self.G = nx.DiGraph()
-
         self.topology_api_app = self
+        
+    def grah_plot(self):
+        nx.draw(self.G, with_labels=True)
+        plt.savefig('network_graph.png')
+        plt.clf()
  
-    #添加流表
     def add_flow(self, datapath, priority, match, actions):
         ofp = datapath.ofproto
         ofp_parser = datapath.ofproto_parser
@@ -30,7 +37,6 @@ class PathForward(app_manager.RyuApp):
                                     priority=priority, match=match, instructions=inst)
         datapath.send_msg(req)
  
-    #设置新交换机
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         msg = ev.msg
@@ -43,50 +49,118 @@ class PathForward(app_manager.RyuApp):
         actions = [ofp_parser.OFPActionOutput(ofp.OFPP_CONTROLLER, ofp.OFPCML_NO_BUFFER)]
         self.add_flow(datapath=datapath, priority=0, match=match, actions=actions)
  
-    #更新SDN网络的拓扑视图
-    @set_ev_cls(event.EventSwitchEnter)  #新交换机加入网络时触发
+
+    @set_ev_cls(event.EventSwitchEnter)  
     def get_topo(self, ev):
-        switch_list = get_switch(self.topology_api_app)  #获取当前网络中所有交换机的列表
-        switches = []  #存储交换机的标识
 
-        for switch in switch_list:
-            switches.append(switch.dp.id)  
+        switch_list = get_switch(self.topology_api_app, None)  
+        switches=[switch.dp.id for switch in switch_list]
+        self.G.add_nodes_from(switches)  
+	
+	for switch in switch_list:
+            for port in switch.ports:
+                self.G.add_node(port.hw_addr, portID = port.port_no)
+                self.G.add_edge(port.hw_addr, switch.dp.id)
+                self.G.add_edge(switch.dp.id, port.hw_addr)
 
-        self.G.add_nodes_from(switches)  #将交换机列表加入到图G节点中
- 
-        link_list = get_link(self.topology_api_app)  #获取当前网络中所有活动链接的列表
-        links = []  #存储链接信息
-
+        link_list = get_link(self.topology_api_app, None) 
+	
         for link in link_list:
-            links.append((link.src.dpid, link.dst.dpid, {'attr_dict': {'port': link.src.port_no}}))   
-
-        self.G.add_edges_from(links)  #将网络链接作为边加入到图G中
+            self.G.add_node(link.src.hw_addr, portID = link.src.port_no )
+            self.G.add_edge(link.src.hw_addr, link.dst.hw_addr)
+	
+	"""
+        links = [(link.src.hw_addr, link.dst.hw_addr) for link in link_list] 
+        self.G.add_edges_from(links)
+        
+        link = [(link.src.dpid, link.src.hw_addr) for link in link_list] 
+        self.G.add_edges_from(link) 
+        
+        
+        links = [(link.dst.hw_addr, link.src.hw_addr) for link in link_list] 
+        self.G.add_edges_from(links)
+        
+        link = [(link.src.hw_addr, link.src.dpid) for link in link_list] 
+        self.G.add_edges_from(link) 
+        """
  
-        for link in link_list:
-            links.append((link.dst.dpid, link.src.dpid, {'attr_dict': {'port': link.dst.port_no}}))
-
-        self.G.add_edges_from(links)  #添加反向链接
  
+
+        self.grah_plot()
+        
+        with open('switches_data.txt', 'w') as outfile:
+            outfile.write("{}\n".format(switches))
+        """    
+        with open('links_data.txt', 'w') as outfile:
+            outfile.write("{}\n".format(links))
+            
+        with open('link_data.txt', 'w') as outfile:
+            outfile.write("{}\n".format(link))
+         """ 
+
+ 	
     def get_out_port(self, datapath, src, dst, in_port):
         dpid = datapath.id
- 
-        if src not in self.G:        #如果拓扑图G中没有源MAC地址作为节点，则将它添加到图中，并且向图添加两条边，一条从交换机dpid到源MAC src，一条相反方向。边上带有属性字典attr_dict，其中记录了相应的端口号
+        print("src:{}".format(src)) 
+        print("dst:{}".format(dst)) 
+        print("innnn:{}".format(in_port)) 
+        
+        port_addr = None
+        for port in datapath.ports.values():
+            if port.port_no == in_port:
+            	  port_addr = port.hw_addr
+        
+        #new host
+        """
+        for node, data in self.G.nodes(data=True):
+            if data.get('portID') == src:
+                break
+        else:
+        """
+        if src not in self.G:  
+            self.G.add_node(src, portID = "host")
+            self.G.add_edge(port_addr, src)
+            self.G.add_edge(src, port_addr)
+            self.grah_plot()
+            
+            
+        """    
+        if src not in self.G:        
             self.G.add_node(src)
             self.G.add_edge(dpid, src, attr_dict={'port': in_port})
             self.G.add_edge(src, dpid)
- 
+            self.grah_plot()
+        """
+            
         if dst in self.G:
-            path = nx.shortest_path(self.G, src, dst)   #查找从源到目的的最短路径
-            next_hop = path[path.index(dpid) + 1]  #从查找到的路径中提取出在当前交换机dpid之后的下一个跳的节点
-            out_port = self.G[dpid][next_hop]['attr_dict']['port']  #查询图中从当前交换机dpid到下一个跳next_hop对应的端口号，并将其设置为输出端口
-            print(path)
+            print("dafawfawfawfawfawfwafawfawfwa") 
+            path = nx.shortest_path(self.G, port_addr, dst) 
+            next_hop = path[path.index(dpid) + 2]  
+            out_port = in_port
+            """
+            out_port = self.G[dpid][next_hop]['attr_dict']['port'] 
+            
+            """
+            print("path:{}".format(path)) 
+
         else:
-            out_port = datapath.ofproto.OFPP_FLOOD  #泛洪
+            out_port = datapath.ofproto.OFPP_FLOOD 
+            print("FLOOD") 
         return out_port
+        
+        
  
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
         msg = ev.msg
+        
+        
+        msg_data = vars(ev.msg) 
+
+        with open('event_data.txt', 'w') as file:
+            for key, value in msg_data.items():
+                file.write("{}: {}\n".format(key, value))
+                
         datapath = msg.datapath
         ofp = datapath.ofproto
         ofp_parser = datapath.ofproto_parser
@@ -99,9 +173,13 @@ class PathForward(app_manager.RyuApp):
  
         dst = eth.dst
         src = eth.src
- 
-        out_port = self.get_out_port(datapath, src, dst, in_port)  #决定数据包的输出端口
+        
+        print("-------------------")
+        out_port = self.get_out_port(datapath, src, dst, in_port)  
         actions = [ofp_parser.OFPActionOutput(out_port)]
+        print("datapath:{}".format(dpid))
+        print("outputport:{}".format(out_port))
+
  
 
         if out_port != ofp.OFPP_FLOOD:
@@ -115,4 +193,5 @@ class PathForward(app_manager.RyuApp):
 
         out = ofp_parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                       in_port=in_port, actions=actions, data=data)
+                                                                
         datapath.send_msg(out)

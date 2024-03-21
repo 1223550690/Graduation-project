@@ -11,7 +11,7 @@ from pathlib import Path
 
 app = Dash(__name__)
 
-#组件：整体布局
+
 app.layout = html.Div([
     html.H1("交换机信息实时展示"),
     #组件：计时器
