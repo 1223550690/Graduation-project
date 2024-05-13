@@ -469,10 +469,8 @@ def generate_metric_row_helper(stopped_interval, index):
                     {
                         "data": [
                             {
-                                "x": state_dict["Index"]["data"].tolist()[
-                                    :stopped_interval
-                                ],
-                                "y": state_dict[item]["data"][:stopped_interval],
+                                "x": [0],
+                                "y": [0],
                                 "mode": "lines+markers",
                                 "name": item,
                                 "line": {"color": "#f4d44d"},
